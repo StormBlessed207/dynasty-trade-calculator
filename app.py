@@ -1,32 +1,38 @@
 import streamlit as st
 import pandas as pd
 
-# --- DATA PIPELINE: STABLE CSV LOADING ---
-@st.cache_data(ttl=86400) # Caches the data for 24 hours
-def load_dynasty_process_data():
+st.set_page_config(layout="wide")
+st.title("🏈 DynastyProcess Trade Optimizer")
+
+# --- LOAD DATA ---
+@st.cache_data(ttl=86400)
+def load_data():
     url = "https://raw.githubusercontent.com/dynastyprocess/data/refs/heads/master/files/values.csv"
     try:
-        # Loading directly from the stable repository
-        df = pd.read_csv(url)
-        return df
+        return pd.read_csv(url)
     except Exception as e:
-        st.error(f"Could not load data: {e}")
+        st.error(f"Error loading CSV: {e}")
         return pd.DataFrame()
 
-# Load the data
-df = load_dynasty_process_data()
+df = load_data()
 
-# --- MAPPING & LOOKUP ---
-def get_player_value(player_name, league_format="1qb"):
-    """
-    Looks up player value from the DataFrame.
-    league_format options: '1qb' (value_1qb) or '2qb' (value_2qb)
-    """
-    col_name = "value_1qb" if league_format == "1qb" else "value_2qb"
+# --- VERIFY DATA LOADED ---
+if df.empty:
+    st.warning("Data file is empty. Check the URL or your internet connection.")
+else:
+    # Show user what columns we have so we can fix the lookup
+    st.write("Data loaded successfully! Available columns:", df.columns.tolist())
     
-    # Filter for the player (case insensitive match)
-    match = df[df['player'].str.lower() == player_name.lower()]
-    
-    if not match.empty:
-        return int(match.iloc[0][col_name])
-    return 0 # Default if player not found
+    # --- LOOKUP LOGIC ---
+    def get_player_val(name):
+        match = df[df['player'].str.contains(name, case=False, na=False)]
+        if not match.empty:
+            # Change 'value_1qb' to the specific column name found in your dataframe
+            return match.iloc[0]['value_1qb'] 
+        return 0
+
+    # --- SIMPLE INPUT ---
+    player_input = st.text_input("Enter player name to test:")
+    if player_input:
+        val = get_player_val(player_input)
+        st.write(f"Value for {player_input}: {val}")
