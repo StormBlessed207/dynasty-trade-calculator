@@ -25,23 +25,27 @@ def load_live_market_values():
     try:
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            value_map = {}
-            for item in response.json():
-                player_obj = item.get("player", {})
-                name = player_obj.get("name")
-                val = item.get("value", 0)
-                if name:
-                    # Strip spaces, punctuation, and suffixes to find clean base names
-                    clean_name = name.lower().replace(".", "").replace("'", "").replace(" ", "")
-                    # Strip common suffixes so base matches remain seamless
-                    for suffix in ["ii", "iii", "jr", "sr"]:
-                        if clean_name.endswith(suffix) and len(clean_name) > len(suffix) + 3:
-                            clean_name = clean_name[:-len(suffix)]
-                    value_map[clean_name] = int(val)
-            return value_map
-        return {}
+            return response.json()
+        return []
     except Exception:
-        return {}
+        return []
+
+# Build a clean dictionary for lookup
+raw_api_data = load_live_market_values()
+market_values = {}
+diagnostic_list = []
+
+for item in raw_api_data:
+    player_obj = item.get("player", {})
+    name = player_obj.get("name")
+    val = item.get("value", 0)
+    if name:
+        clean_name = name.lower().replace(".", "").replace("'", "").replace(" ", "")
+        for suffix in ["ii", "iii", "jr", "sr"]:
+            if clean_name.endswith(suffix) and len(clean_name) > len(suffix) + 3:
+                clean_name = clean_name[:-len(suffix)]
+        market_values[clean_name] = int(val)
+        diagnostic_list.append({"Raw Name from API": name, "Cleaned Key Used": clean_name, "Base 1QB Value": int(val)})
 
 def get_user_id(username):
     url = f"https://api.sleeper.app/v1/user/{username}"
@@ -65,7 +69,6 @@ def lookup_and_modify_value(name_str, market_values):
         if clean.endswith(suffix) and len(clean) > len(suffix) + 3:
             clean = clean[:-len(suffix)]
             
-    # Base fallback architecture if name is fully omitted from the API feed
     is_qb = name_str in ["Patrick Mahomes", "Josh Allen", "Lamar Jackson", "Jalen Hurts", "C.J. Stroud", "Anthony Richardson", "Jayden Daniels", "Baker Mayfield"]
     default_fallback = 2200 if is_qb else 7500
     
@@ -74,13 +77,10 @@ def lookup_and_modify_value(name_str, market_values):
     # --- CUSTOM SCORING SCALING ENGINE ---
     if name_str in ["Patrick Mahomes", "C.J. Stroud", "Joe Burrow", "Dak Prescott", "Brock Purdy"]:
         return int(base_val * 1.25)
-        
     if name_str in ["Josh Allen", "Lamar Jackson", "Jordan Love", "Justin Herbert"]:
         return int(base_val * 1.12)
-
     if name_str in ["Jalen Hurts", "Anthony Richardson", "Jayden Daniels", "Kyler Murray"]:
         return int(base_val * 0.85)
-        
     if name_str in ["Baker Mayfield", "Geno Smith", "Will Levis", "Kirk Cousins", "Deshaun Watson"]:
         return int(base_val * 0.70)
 
@@ -112,7 +112,6 @@ if st.session_state.user_id and st.session_state.leagues:
     selected_league_name = st.selectbox("🎯 Select Active League", list(league_options.keys()))
     active_league_id = league_options[selected_league_name]
     
-    market_values = load_live_market_values()
     rosters, users_data = get_league_metadata(active_league_id)
     
     user_map = {}
@@ -182,5 +181,15 @@ if st.session_state.user_id and st.session_state.leagues:
             st.error(f"❌ **Trade Loss!** You are giving away `-{abs(net_difference):,}` points of value.")
         else:
             st.info(f"⚖️ **Fair Trade.** Net variance is only `{net_difference:,}` points.")
+
+    # --- NEW VISUAL DIAGNOSTIC TABLE ---
+    st.markdown("---")
+    st.subheader("🔍 System Diagnostics Database")
+    st.markdown("This live spreadsheet shows exactly what values and spelling formats your app is fetching from the backend server:")
+    if diagnostic_list:
+        df = pd.DataFrame(diagnostic_list)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.warning("No dynamic player data pulled from the API. System is running entirely on backup safety floors.")
 else:
     st.info("💡 Please enter your Sleeper Username in the sidebar menu and click 'Load League Data' to populate your team dashboard.")
