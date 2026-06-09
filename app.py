@@ -28,10 +28,12 @@ def load_live_market_values():
         if response.status_code == 200:
             value_map = {}
             for item in response.json():
-                name = item.get("player", {}).get("name")
+                player_obj = item.get("player", {})
+                name = player_obj.get("name")
                 val = item.get("value", 0)
                 if name:
-                    clean_name = name.lower().replace(".", "").replace("'", "")
+                    # Clean punctuation and simplify string matching maps
+                    clean_name = name.lower().replace(".", "").replace("'", "").replace(" ", "")
                     value_map[clean_name] = int(val)
             return value_map
         return {}
@@ -55,31 +57,30 @@ def get_league_metadata(league_id):
 
 # --- CUSTOM SCORING SCALING LOGIC ---
 def lookup_and_modify_value(name_str, market_values):
-    clean = name_str.lower().replace(".", "").replace("'", "")
-    # Default fallback baseline if the player card is missing from the API slice
-    base_val = market_values.get(clean, 2500) 
+    clean = name_str.lower().replace(".", "").replace("'", "").replace(" ", "")
     
-    # Tier 1: Elite High-Volume / High-Efficiency Pocket & Hybrid Passers
-    # Huge baseline advantage from +0.3 per completion & 6pt TD; clean enough to escape the -4 INT traps.
+    # --- POSITION-BASED SAFETY FALLBACK MATRIX ---
+    # If the live API fails to resolve, positions get realistic default 1QB baseline scarcity floors
+    is_qb = name_str in ["Patrick Mahomes", "Josh Allen", "Lamar Jackson", "Jalen Hurts", "C.J. Stroud", "Anthony Richardson", "Jayden Daniels", "Baker Mayfield"]
+    default_fallback = 2200 if is_qb else 7500 # Elite WRs/RBs carry heavy 1QB premiums
+    
+    base_val = market_values.get(clean, default_fallback) 
+    
+    # --- CUSTOM SCORING SCALING ENGINE ---
+    # Targets specific QB archetypes to align with +0.3 Comp / -4 INT / 6pt Pass TD
     if name_str in ["Patrick Mahomes", "C.J. Stroud", "Joe Burrow", "Dak Prescott", "Brock Purdy"]:
         return int(base_val * 1.25)
         
-    # Tier 2: Heavy-Volume Gunslingers / Dual-Threat Hybrids
-    # Significant completion upside points, but trailing interceptions keep their market value modification normalized.
     if name_str in ["Josh Allen", "Lamar Jackson", "Jordan Love", "Justin Herbert"]:
         return int(base_val * 1.12)
 
-    # Tier 3: Low Passing Volume / Pure Rushing Dependents
-    # Traditional 1QB markets overvalue their legs; your rules actively penalize low completion counts and lower passing yards.
     if name_str in ["Jalen Hurts", "Anthony Richardson", "Jayden Daniels", "Kyler Murray"]:
         return int(base_val * 0.85)
         
-    # Tier 4: High-Risk / Mistake-Prone Streamers
-    # The extreme -4 INT penalty completely vaporizes their scoring floor in a 1QB format.
     if name_str in ["Baker Mayfield", "Geno Smith", "Will Levis", "Kirk Cousins", "Deshaun Watson"]:
         return int(base_val * 0.70)
 
-    # All Skill Positions (WRs, RBs, TEs) bypass the modifier unchanged, maintaining pure 1QB scarcity relationships.
+    # Non-QBs bypass the modifier unchanged, retaining correct 1QB market metrics
     return base_val
 
 # --- APPLICATION SIDEBAR CONTROL ---
@@ -152,13 +153,17 @@ if st.session_state.user_id and st.session_state.leagues:
         with c_left:
             st.markdown(f"**Custom Value You Give:** `{my_total_val:,} pts`")
             for p in my_trade_pieces:
-                base = market_values.get(p.lower().replace(".", "").replace("'", ""), 2500)
+                clean_p = p.lower().replace(".", "").replace("'", "").replace(" ", "")
+                is_qb = p in ["Patrick Mahomes", "Josh Allen", "Lamar Jackson", "Jalen Hurts", "C.J. Stroud", "Anthony Richardson", "Jayden Daniels", "Baker Mayfield"]
+                base = market_values.get(clean_p, 2200 if is_qb else 7500)
                 custom = lookup_and_modify_value(p, market_values)
                 st.write(f"• {p} (Market 1QB: {base:,} ➔ **Custom: {custom:,}**)")
         with c_right:
             st.markdown(f"**Custom Value You Receive:** `{opp_total_val:,} pts`")
             for p in opp_trade_pieces:
-                base = market_values.get(p.lower().replace(".", "").replace("'", ""), 2500)
+                clean_p = p.lower().replace(".", "").replace("'", "").replace(" ", "")
+                is_qb = p in ["Patrick Mahomes", "Josh Allen", "Lamar Jackson", "Jalen Hurts", "C.J. Stroud", "Anthony Richardson", "Jayden Daniels", "Baker Mayfield"]
+                base = market_values.get(clean_p, 2200 if is_qb else 7500)
                 custom = lookup_and_modify_value(p, market_values)
                 st.write(f"• {p} (Market 1QB: {base:,} ➔ **Custom: {custom:,}**)")
                 
