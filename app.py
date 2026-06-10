@@ -21,11 +21,12 @@ def get_user_leagues(username):
 
 @st.cache_data(ttl=600)
 def get_all_league_rosters(league_id):
+    # Fetch data from Sleeper API
     rosters = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/rosters").json()
     users = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/users").json()
     all_players_data = requests.get("https://api.sleeper.app/v1/players/nfl").json()
     
-    # Ensure all_players_data is a dictionary for .get()
+    # Ensure all_players_data is a dictionary
     all_players = all_players_data if isinstance(all_players_data, dict) else {}
     
     user_map = {u['user_id']: u.get('display_name', 'Unknown') for u in users}
@@ -35,8 +36,14 @@ def get_all_league_rosters(league_id):
         owner_id = r.get('owner_id')
         manager_name = user_map.get(owner_id, "Unknown Team")
         player_ids = r.get('players', [])
-        # Safely lookup player names
-        player_names = [all_players.get(pid, {}).get('full_name', 'Unknown') for pid in player_ids]
+        
+        # Safely look up player names using the ID as the key
+        player_names = []
+        for pid in player_ids:
+            player_info = all_players.get(pid)
+            if isinstance(player_info, dict):
+                player_names.append(player_info.get('full_name', 'Unknown'))
+        
         full_rosters[manager_name] = player_names
     return full_rosters
 
@@ -72,7 +79,7 @@ if "rosters" in st.session_state:
     
     col1, col2 = st.columns(2)
     
-    # Team Selection logic
+    # Team Selection
     my_team = col1.selectbox("Select Your Team:", list(all_teams.keys()), key="my_team_select")
     my_players = all_teams.get(my_team, [])
     my_send = col1.multiselect("Select players to send:", my_players)
