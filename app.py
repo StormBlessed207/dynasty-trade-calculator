@@ -15,7 +15,7 @@ def load_data():
 @st.cache_data(ttl=600)
 def get_user_leagues(username):
     user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}").json()
-    if not user_resp: return None
+    if not user_resp or not isinstance(user_resp, dict): return None
     user_id = user_resp.get("user_id")
     return requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026").json()
 
@@ -23,7 +23,10 @@ def get_user_leagues(username):
 def get_all_league_rosters(league_id):
     rosters = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/rosters").json()
     users = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/users").json()
-    all_players = requests.get("https://api.sleeper.app/v1/players/nfl").json()
+    all_players_data = requests.get("https://api.sleeper.app/v1/players/nfl").json()
+    
+    # Ensure all_players_data is a dictionary for .get()
+    all_players = all_players_data if isinstance(all_players_data, dict) else {}
     
     user_map = {u['user_id']: u.get('display_name', 'Unknown') for u in users}
     
@@ -32,7 +35,8 @@ def get_all_league_rosters(league_id):
         owner_id = r.get('owner_id')
         manager_name = user_map.get(owner_id, "Unknown Team")
         player_ids = r.get('players', [])
-        player_names = [all_players.get(pid, {}).get('full_name') for pid in player_ids if pid in all_players]
+        # Safely lookup player names
+        player_names = [all_players.get(pid, {}).get('full_name', 'Unknown') for pid in player_ids]
         full_rosters[manager_name] = player_names
     return full_rosters
 
@@ -59,6 +63,8 @@ if username:
         if st.sidebar.button("Load League Data"):
             st.session_state.league = selected_league
             st.session_state.rosters = get_all_league_rosters(selected_league['league_id'])
+    else:
+        st.sidebar.error("Could not find leagues.")
 
 # --- MAIN DISPLAY ---
 if "rosters" in st.session_state:
@@ -66,12 +72,11 @@ if "rosters" in st.session_state:
     
     col1, col2 = st.columns(2)
     
-    # 1. Select Your Team
+    # Team Selection logic
     my_team = col1.selectbox("Select Your Team:", list(all_teams.keys()), key="my_team_select")
     my_players = all_teams.get(my_team, [])
     my_send = col1.multiselect("Select players to send:", my_players)
     
-    # 2. Select Opponent Team
     opp_team = col2.selectbox("Select Opponent Team:", list(all_teams.keys()), key="opp_team_select")
     opp_players = all_teams.get(opp_team, [])
     opp_recv = col2.multiselect("Select players to receive:", opp_players)
